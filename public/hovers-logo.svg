@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
+  <rect width="40" height="40" rx="6" fill="#b20f00"/>
+  <text x="20" y="28" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-weight="900" font-size="24">H</text>
+  <text x="52" y="18" fill="#e4e4e4" font-family="Arial, sans-serif" font-weight="800" font-size="14" letter-spacing="2">HOVERS</text>
+  <text x="52" y="32" fill="#888" font-family="Arial, sans-serif" font-weight="500" font-size="7" letter-spacing="1.5">PERFORMANCE MARKETING</text>
+</svg>
