@@ -21,6 +21,10 @@ export type PixelMaturity = 'fresh' | 'learning' | 'mature'
 
 export type CreativeCapacity = 'low' | 'medium' | 'high'
 
+export type ScenarioType = 'conservative' | 'base' | 'aggressive'
+
+export type DataMode = 'benchmark' | 'windsor'
+
 export type MetaCampaignName =
   | 'ASC + Broad'
   | 'Interest + Lookalike'  // used when pixel is fresh
@@ -60,6 +64,29 @@ export interface MediaPlanInputs {
   pixelMaturity: PixelMaturity
   creativeCapacity: CreativeCapacity
   inventoryValue: number | null  // null = no cap
+
+  // Section 4: Growth Config
+  spendGrowthRate: number      // default 1.2-1.4 based on brand type
+
+  // Section 5: Windsor Overrides (auto-populated when Windsor data available)
+  dataMode: DataMode
+  windsorOverrides: WindsorOverrides | null
+}
+
+export interface WindsorOverrides {
+  metaCpm: number
+  metaCpc: number
+  metaCtr: number
+  metaConvRate: number
+  metaRoas: number
+  metaCpa: number
+  googleCpc: number
+  googleCtr: number
+  googleConvRate: number
+  googleRoas: number
+  actualPlatformSplit: { meta: number; google: number }
+  avgFrequency: number
+  dataQuality: 'strong' | 'partial' | 'insufficient'
 }
 
 // ─── Outputs ───
@@ -70,6 +97,7 @@ export interface MonthProjection {
   googleSpend: number
   totalSpend: number
   roas: number
+  efficiencyMultiplier: number  // learning phase: M1=0.6, M2=0.8, M3=1.0
   newCustomerRevenue: number
   repeatRevenue: number
   retentionRevenue: number
@@ -127,12 +155,31 @@ export interface DynamicFunnel {
   bofCappedReason: string | null
 }
 
+export interface Assumptions {
+  spendGrowthRate: number
+  efficiencyPenalty: [number, number, number]  // M1, M2, M3 multipliers
+  roasSource: 'windsor' | 'industry-benchmark' | 'user-input'
+  benchmarkSource: 'windsor-actuals' | 'india-industry'
+  platformSplitReason: string
+  breakEvenRoas: number
+  breakEvenCpa: number
+  seasonalityApplied: boolean
+}
+
+export interface ScenarioPlan {
+  type: ScenarioType
+  label: string
+  roasMultiplier: number
+  projection: [MonthProjection, MonthProjection, MonthProjection]
+}
+
 export interface MediaPlan {
   brand: string
   industry: Industry
   stage: Stage
   quarter: Quarter
   brandType: BrandType
+  dataMode: DataMode
   platformSplit: { meta: number; google: number }
   seasonalityConv: number
   seasonalityCpm: number
@@ -143,7 +190,9 @@ export interface MediaPlan {
   dynamicFunnel: DynamicFunnel
   pixelStrategy: string
   warnings: string[]
+  assumptions: Assumptions
   projection: [MonthProjection, MonthProjection, MonthProjection]
+  scenarios: ScenarioPlan[]
   metaCampaigns: MetaCampaignRow[]
   googleCampaigns: GoogleCampaignRow[]
   creativeMatrix: [CreativeMonthMatrix, CreativeMonthMatrix, CreativeMonthMatrix]

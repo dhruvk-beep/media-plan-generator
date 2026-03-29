@@ -20,7 +20,7 @@ export default function ProjectionTable({ projection, seasonalityNote }: Props) 
     { label: 'Meta Ads Spend', getValue: p => formatINR(p.metaSpend), show: true },
     { label: 'Google Ads Spend', getValue: p => formatINR(p.googleSpend), show: true },
     { label: 'Total Ad Spend', getValue: p => formatINR(p.totalSpend) + (p.inventoryCapped ? ' *' : ''), bold: true, show: true },
-    { label: 'Target ROAS', getValue: p => formatRoas(p.roas), getColor: p => p.roas >= 2 ? 'text-green-400' : 'text-orange-400', show: true },
+    { label: 'Target ROAS', getValue: p => formatRoas(p.roas) + (p.efficiencyMultiplier < 1 ? ` (${Math.round(p.efficiencyMultiplier * 100)}% eff.)` : ''), getColor: p => p.roas >= 2 ? 'text-green-400' : 'text-orange-400', show: true },
     { label: 'New Customer Revenue', getValue: p => formatINR(p.newCustomerRevenue), getColor: () => 'text-green-400', show: true },
     { label: '+ Repeat Revenue', getValue: p => formatINR(p.repeatRevenue), getColor: () => 'text-green-300', indent: true, show: hasRepeat },
     { label: '+ Retention (Email/SMS)', getValue: p => formatINR(p.retentionRevenue), getColor: () => 'text-green-300', indent: true, show: hasRetention },

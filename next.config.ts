@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export",
-  basePath: "/media-plan-generator",
+  // Removed "output: export" and basePath — now deploying on Vercel with API routes
   images: { unoptimized: true },
 };
 
