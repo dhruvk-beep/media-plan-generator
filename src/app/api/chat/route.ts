@@ -86,15 +86,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Log chat message
-  const session = await auth()
-  if (session?.user) {
-    const lastMsg = messages[messages.length - 1]
-    logActivity(session.user.email ?? '', session.user.name ?? '', 'chat_message', {
-      message: lastMsg?.content?.slice(0, 200),
-      brandName: currentInputs?.brandName,
-    })
-  }
+  // Log chat message (fire-and-forget, never blocks the response)
+  auth().then(session => {
+    if (session?.user) {
+      const lastMsg = messages[messages.length - 1]
+      logActivity(session.user.email ?? '', session.user.name ?? '', 'chat_message', {
+        message: lastMsg?.content?.slice(0, 500),
+        conversationLength: messages.length,
+        fullConversation: messages.map((m: { role: string; content: string }) => ({
+          role: m.role,
+          content: m.content.slice(0, 500),
+        })),
+        brandName: currentInputs?.brandName,
+      })
+    }
+  }).catch(() => {})
 
   try {
     const response = await anthropic.messages.create({

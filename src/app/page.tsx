@@ -417,7 +417,12 @@ export default function Home() {
           {plan && plan.dataMode === 'windsor' && (
             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-400 uppercase hidden lg:inline">Live</span>
           )}
-          <button onClick={() => window.print()}
+          <button onClick={() => {
+            fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'download_pdf', metadata: { brandName: plan?.brand, industry: plan?.industry } })
+            }).catch(() => {})
+            window.print()
+          }}
             className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-[10px] lg:text-xs font-bold rounded-lg uppercase tracking-wider transition-colors">
             PDF
           </button>

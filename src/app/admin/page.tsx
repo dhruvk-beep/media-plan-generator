@@ -1,26 +1,27 @@
 import { auth } from '@/lib/auth'
 import { getActivityLog, ensureTable } from '@/lib/activity-log'
 import { redirect } from 'next/navigation'
+import ChatLogExpander from './ChatLogExpander'
 
 const ACTION_LABELS: Record<string, string> = {
   generate_plan: 'Generated Plan',
   chat_message: 'Chat Message',
   refine_plan: 'Refined Plan',
+  download_pdf: 'Downloaded PDF',
 }
 
 const ACTION_COLORS: Record<string, string> = {
   generate_plan: 'bg-red-900/50 text-red-400',
   chat_message: 'bg-violet-900/50 text-violet-400',
   refine_plan: 'bg-amber-900/50 text-amber-400',
+  download_pdf: 'bg-blue-900/50 text-blue-400',
 }
 
 export default async function AdminPage() {
   const session = await auth()
   if (!session?.user) redirect('/login')
 
-  // Ensure table exists on first visit
   await ensureTable()
-
   const logs = await getActivityLog(200)
 
   return (
@@ -52,39 +53,49 @@ export default async function AdminPage() {
               const time = new Date(log.created_at)
 
               return (
-                <div key={log.id} className="flex items-start gap-3 px-4 py-3 rounded-lg hover:bg-zinc-900/50 transition-colors">
-                  {/* Time */}
-                  <div className="text-[10px] text-zinc-700 w-24 shrink-0 pt-0.5">
-                    {time.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}{' '}
-                    {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                <div key={log.id} className="px-4 py-3 rounded-lg hover:bg-zinc-900/50 transition-colors">
+                  <div className="flex items-start gap-3">
+                    {/* Time */}
+                    <div className="text-[10px] text-zinc-700 w-24 shrink-0 pt-0.5">
+                      {time.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}{' '}
+                      {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+
+                    {/* User */}
+                    <div className="w-32 shrink-0">
+                      <p className="text-xs text-zinc-300 truncate">{log.user_name}</p>
+                      <p className="text-[9px] text-zinc-700 truncate">{log.user_email}</p>
+                    </div>
+
+                    {/* Action badge */}
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${ACTION_COLORS[log.action] ?? 'bg-zinc-800 text-zinc-400'}`}>
+                      {ACTION_LABELS[log.action] ?? log.action}
+                    </span>
+
+                    {/* Metadata */}
+                    <div className="flex-1 min-w-0">
+                      {meta.brandName && (
+                        <span className="text-[10px] text-zinc-400">{meta.brandName}</span>
+                      )}
+                      {meta.siteUrl && (
+                        <span className="text-[10px] text-zinc-600 ml-2">{meta.siteUrl}</span>
+                      )}
+                      {meta.message && !meta.fullConversation && (
+                        <p className="text-[10px] text-zinc-500 truncate">&ldquo;{meta.message}&rdquo;</p>
+                      )}
+                      {meta.feedback && (
+                        <p className="text-[10px] text-zinc-500 truncate">&ldquo;{meta.feedback}&rdquo;</p>
+                      )}
+                      {meta.conversationLength && (
+                        <span className="text-[9px] text-zinc-600 ml-1">({meta.conversationLength} messages)</span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* User */}
-                  <div className="w-32 shrink-0">
-                    <p className="text-xs text-zinc-300 truncate">{log.user_name}</p>
-                    <p className="text-[9px] text-zinc-700 truncate">{log.user_email}</p>
-                  </div>
-
-                  {/* Action badge */}
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${ACTION_COLORS[log.action] ?? 'bg-zinc-800 text-zinc-400'}`}>
-                    {ACTION_LABELS[log.action] ?? log.action}
-                  </span>
-
-                  {/* Metadata */}
-                  <div className="flex-1 min-w-0">
-                    {meta.brandName && (
-                      <span className="text-[10px] text-zinc-400">{meta.brandName}</span>
-                    )}
-                    {meta.siteUrl && (
-                      <span className="text-[10px] text-zinc-600 ml-2">{meta.siteUrl}</span>
-                    )}
-                    {meta.message && (
-                      <p className="text-[10px] text-zinc-500 truncate">&ldquo;{meta.message}&rdquo;</p>
-                    )}
-                    {meta.feedback && (
-                      <p className="text-[10px] text-zinc-500 truncate">&ldquo;{meta.feedback}&rdquo;</p>
-                    )}
-                  </div>
+                  {/* Expandable chat conversation */}
+                  {meta.fullConversation && (
+                    <ChatLogExpander conversation={meta.fullConversation} />
+                  )}
                 </div>
               )
             })}

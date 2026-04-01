@@ -32,15 +32,16 @@ export async function POST(req: NextRequest) {
     // Claude synthesizes all data and recommends growth strategy
     const recommendation = await getClaudeRecommendation(siteData, windsorData)
 
-    // Log activity
-    const session = await auth()
-    if (session?.user) {
-      logActivity(session.user.email ?? '', session.user.name ?? '', 'generate_plan', {
-        siteUrl, metaAccountId, googleAccountId,
-        brandName: siteData?.brandName,
-        industry: siteData?.industry,
-      })
-    }
+    // Log activity (fire-and-forget)
+    auth().then(session => {
+      if (session?.user) {
+        logActivity(session.user.email ?? '', session.user.name ?? '', 'generate_plan', {
+          siteUrl, metaAccountId, googleAccountId,
+          brandName: siteData?.brandName,
+          industry: siteData?.industry,
+        })
+      }
+    }).catch(() => {})
 
     return NextResponse.json({
       windsor: windsorData,
