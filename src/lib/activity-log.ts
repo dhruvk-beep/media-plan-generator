@@ -48,7 +48,8 @@ export interface ActivityEntry {
 export async function getActivityLog(limit = 100): Promise<ActivityEntry[]> {
   const sql = getDb()
   const rows = await sql`
-    SELECT id, user_email, user_name, action, metadata, created_at
+    SELECT id, user_email, user_name, action, metadata,
+      (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::text as created_at
     FROM activity_log
     ORDER BY created_at DESC
     LIMIT ${limit}
