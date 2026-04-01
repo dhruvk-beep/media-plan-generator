@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 
 const WINDSOR_API_KEY = process.env.WINDSOR_API_KEY ?? ''

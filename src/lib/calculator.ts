@@ -23,24 +23,28 @@ export function generateMediaPlan(inputs: MediaPlanInputs): MediaPlan {
     quarter, brandType, grossMargin, currentRoas,
     monthlyTraffic, emailListSize, skuCount, repeatPurchaseRate,
     avgDiscount, pixelMaturity, creativeCapacity, inventoryValue,
-    spendGrowthRate, dataMode, windsorOverrides,
+    spendGrowthRate, platformSplitOverride, dataMode, windsorOverrides,
   } = inputs
 
   const warnings: string[] = []
 
-  // ─── Step 1: Stage & Platform Split (now industry-aware) ───
+  // ─── Step 1: Stage & Platform Split ───
   const stage = getStage(monthlyRevenue)
-  let split = getPlatformSplit(stage, industry)
+  let split: { meta: number; google: number }
 
-  // If Windsor data available, use actual platform split as reference
-  if (dataMode === 'windsor' && windsorOverrides) {
+  if (platformSplitOverride) {
+    // Direct override — user or AI explicitly set the split
+    split = platformSplitOverride
+  } else if (dataMode === 'windsor' && windsorOverrides) {
+    const base = getPlatformSplit(stage, industry)
     const actual = windsorOverrides.actualPlatformSplit
-    // Blend: 60% actual, 40% recommended (don't just copy, improve)
     split = {
-      meta: actual.meta * 0.6 + split.meta * 0.4,
-      google: actual.google * 0.6 + split.google * 0.4,
+      meta: actual.meta * 0.6 + base.meta * 0.4,
+      google: actual.google * 0.6 + base.google * 0.4,
     }
     warnings.push(`Platform split blended from Windsor actuals (${Math.round(actual.meta * 100)}/${Math.round(actual.google * 100)}) and industry recommendation.`)
+  } else {
+    split = getPlatformSplit(stage, industry)
   }
 
   // ─── Step 2: Seasonality ───

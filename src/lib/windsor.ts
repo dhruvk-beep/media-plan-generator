@@ -63,6 +63,22 @@ export interface WindsorMetrics {
   currentMonthlyRevenue: number
   platformSplitActual: { meta: number; google: number }
   dataQuality: 'strong' | 'partial' | 'insufficient'
+
+  // Inferred fields — derived from ad data so the user doesn't have to enter them
+  inferred: {
+    aov: number | null                // revenue ÷ purchases
+    pixelMaturity: 'fresh' | 'learning' | 'mature'
+    brandType: 'existing' | 'preLaunch' | 'vcBacked'
+    monthlyTraffic: number | null     // estimated from clicks + organic multiplier
+    weeklyConversions: number         // used to determine pixel maturity
+    blendedConvRate: number | null    // clicks → purchases across platforms
+    blendedCtr: number | null         // impressions → clicks across platforms
+    blendedCpc: number | null         // avg cost per click across platforms
+    blendedCpm: number | null         // avg CPM across platforms (Meta only for now)
+    avgFrequency: number | null       // Meta ad frequency
+    totalPurchases: number            // total conversions across platforms
+    estimatedMonthlyOrders: number    // monthly purchase run rate
+  }
 }
 
 const META_FIELDS = [
@@ -95,6 +111,20 @@ export async function fetchWindsorMetrics(
     currentMonthlyRevenue: 0,
     platformSplitActual: { meta: 0.5, google: 0.5 },
     dataQuality: 'insufficient',
+    inferred: {
+      aov: null,
+      pixelMaturity: 'fresh',
+      brandType: 'existing',
+      monthlyTraffic: null,
+      weeklyConversions: 0,
+      blendedConvRate: null,
+      blendedCtr: null,
+      blendedCpc: null,
+      blendedCpm: null,
+      avgFrequency: null,
+      totalPurchases: 0,
+      estimatedMonthlyOrders: 0,
+    },
   }
 
   const fetches: Promise<void>[] = []
@@ -154,7 +184,73 @@ export async function fetchWindsorMetrics(
     results.dataQuality = 'partial'
   }
 
+  // ─── Infer fields from ad data ───
+  const metaPurchases = results.meta?.totalPurchases ?? 0
+  const googleConversions = results.google ? estimateGoogleConversions(results.google) : 0
+  const totalPurchases = metaPurchases + googleConversions
+  const totalClicks = (results.meta?.totalClicks ?? 0) + (results.google?.totalClicks ?? 0)
+  const totalImpressions = results.meta?.totalImpressions ?? 0 // only Meta has impressions in our data
+
+  const weeklyConversions = totalPurchases / 13 // 90 days ≈ 13 weeks
+
+  results.inferred = {
+    // AOV: total revenue ÷ total purchases across both platforms
+    aov: totalPurchases > 0 ? Math.round(totalRevenue / totalPurchases) : null,
+
+    // Pixel maturity: based on weekly conversion volume
+    // 50+/wk = mature (enough for ASC/smart bidding), 10-50 = learning, <10 = fresh
+    pixelMaturity: weeklyConversions >= 50 ? 'mature' : weeklyConversions >= 10 ? 'learning' : 'fresh',
+
+    // Brand type: infer from spend level and efficiency
+    // High spend + low ROAS = likely VC-backed growth mode
+    // No data = pre-launch (but we won't reach here if insufficient)
+    brandType: inferBrandType(results.currentMonthlySpend, results.currentBlendedRoas),
+
+    // Monthly traffic estimate: ad clicks + 2x organic multiplier (conservative)
+    // Brands with ads typically get 2-3x their paid clicks as organic traffic
+    monthlyTraffic: totalClicks > 0 ? Math.round((totalClicks / 3) * 3) : null, // monthly clicks + organic estimate
+
+    weeklyConversions: Math.round(weeklyConversions),
+
+    // Blended conversion rate: purchases ÷ clicks across all platforms
+    blendedConvRate: totalClicks > 0 ? totalPurchases / totalClicks : null,
+
+    // Blended CTR: clicks ÷ impressions (Meta impressions + Google estimated)
+    blendedCtr: totalImpressions > 0 ? totalClicks / totalImpressions : null,
+
+    // Blended CPC: total spend ÷ total clicks
+    blendedCpc: totalClicks > 0 ? totalSpend / totalClicks : null,
+
+    // Blended CPM: only from Meta (Google doesn't report CPM the same way)
+    blendedCpm: results.meta?.avgCpm ?? null,
+
+    // Meta ad frequency
+    avgFrequency: results.meta?.avgFrequency ?? null,
+
+    totalPurchases,
+    estimatedMonthlyOrders: Math.round(totalPurchases / 3),
+  }
+
   return results
+}
+
+function estimateGoogleConversions(google: NonNullable<WindsorMetrics['google']>): number {
+  // Google campaigns report conversions; sum from campaign data
+  return google.campaigns.reduce((sum, c) => {
+    // convRate × clicks gives us conversions
+    const clicks = c.spend > 0 && c.cpc > 0 ? c.spend / c.cpc : 0
+    return sum + (clicks * c.convRate)
+  }, 0)
+}
+
+function inferBrandType(monthlySpend: number, blendedRoas: number): 'existing' | 'preLaunch' | 'vcBacked' {
+  // VC-backed: spending aggressively (>10L/mo) with below-break-even ROAS (<1.5)
+  // This pattern = growth-at-all-costs, typical of funded D2C brands
+  if (monthlySpend > 1000000 && blendedRoas < 1.5) return 'vcBacked'
+  // High spend with decent ROAS = established brand scaling
+  if (monthlySpend > 500000 && blendedRoas >= 1.5) return 'existing'
+  // Low spend = still existing but early stage
+  return 'existing'
 }
 
 function computeMetaMetrics(rows: Record<string, unknown>[]): WindsorMetrics['meta'] {

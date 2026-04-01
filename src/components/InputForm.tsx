@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import type { Industry, Quarter, BrandType, PixelMaturity, CreativeCapacity, MediaPlanInputs } from '@/lib/types'
 import { INDUSTRY_LABELS, DEFAULT_MARGIN, DEFAULT_REPEAT_RATE, DEFAULT_GROWTH_RATE } from '@/lib/constants'
 import { fetchWindsorAccounts, fetchWindsorMetrics, type WindsorAccount } from '@/lib/windsor'
+import { analyzeSite, type SiteAnalysis } from '@/lib/site-analysis'
 
 interface Props {
   inputs: MediaPlanInputs
@@ -27,7 +28,7 @@ function Section({ title, defaultOpen, badge, children }: { title: string; defau
   )
 }
 
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+function Field({ label, children, hint }: { label: React.ReactNode; children: React.ReactNode; hint?: string }) {
   return (
     <div>
       <label className="block text-xs font-medium text-zinc-400 mb-1 uppercase tracking-wider">{label}</label>
@@ -39,12 +40,22 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 const inputClass = "w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-red-700 transition-colors"
 
+function AutoBadge({ field, autoFilled }: { field: string; autoFilled: Record<string, boolean> }) {
+  if (!autoFilled[field]) return null
+  return <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-emerald-900/50 text-emerald-400 uppercase ml-1">auto</span>
+}
+
 export default function InputForm({ inputs, onChange, onGenerate }: Props) {
   const [windsorAccounts, setWindsorAccounts] = useState<WindsorAccount[]>([])
   const [selectedMetaAccount, setSelectedMetaAccount] = useState<string>('')
   const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<string>('')
   const [windsorLoading, setWindsorLoading] = useState(false)
   const [windsorStatus, setWindsorStatus] = useState<string>('')
+  const [autoFilled, setAutoFilled] = useState<Record<string, boolean>>({})
+  const [siteUrl, setSiteUrl] = useState('')
+  const [siteLoading, setSiteLoading] = useState(false)
+  const [siteStatus, setSiteStatus] = useState('')
+  const [siteAnalysis, setSiteAnalysis] = useState<SiteAnalysis | null>(null)
 
   // Fetch Windsor accounts on mount
   useEffect(() => {
@@ -52,6 +63,17 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
       setWindsorAccounts(accounts)
     }).catch(() => {})
   }, [])
+
+  // Auto-fetch Windsor data when account selection changes
+  useEffect(() => {
+    if (!selectedMetaAccount && !selectedGoogleAccount) return
+    // Small delay to batch rapid changes (e.g. selecting both accounts quickly)
+    const timer = setTimeout(() => {
+      handleFetchWindsor()
+    }, 300)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMetaAccount, selectedGoogleAccount])
 
   const set = <K extends keyof MediaPlanInputs>(key: K, val: MediaPlanInputs[K]) => {
     const next = { ...inputs, [key]: val }
@@ -114,12 +136,90 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
         next.currentRoas = Math.round(metrics.currentBlendedRoas * 10) / 10
       }
 
+      // Auto-fill from inferred data
+      const inf = metrics.inferred
+      if (inf.aov) {
+        next.aov = inf.aov
+      }
+      next.pixelMaturity = inf.pixelMaturity
+      next.brandType = inf.brandType
+      next.spendGrowthRate = DEFAULT_GROWTH_RATE[inf.brandType] ?? 1.2
+      if (inf.monthlyTraffic) {
+        next.monthlyTraffic = inf.monthlyTraffic
+      }
+
+      // Track which fields were auto-filled so we can show indicators
+      setAutoFilled({
+        monthlyAdSpend: metrics.currentMonthlySpend > 0,
+        monthlyRevenue: metrics.currentMonthlyRevenue > 0,
+        currentRoas: metrics.currentBlendedRoas > 0,
+        aov: !!inf.aov,
+        pixelMaturity: true,
+        brandType: true,
+        monthlyTraffic: !!inf.monthlyTraffic,
+      })
+
       onChange(next)
-      setWindsorStatus(`Connected (${metrics.dataQuality}) — ${metrics.meta ? 'Meta' : ''}${metrics.meta && metrics.google ? ' + ' : ''}${metrics.google ? 'Google' : ''} data loaded`)
+
+      // Build detailed status with all inferred metrics
+      const parts = [metrics.meta ? 'Meta' : '', metrics.google ? 'Google' : ''].filter(Boolean).join(' + ')
+      const inferredParts: string[] = []
+      if (inf.aov) inferredParts.push(`AOV ₹${inf.aov.toLocaleString('en-IN')}`)
+      if (inf.weeklyConversions > 0) inferredParts.push(`${inf.weeklyConversions} conv/wk → ${inf.pixelMaturity} pixel`)
+      if (inf.blendedConvRate) inferredParts.push(`${(inf.blendedConvRate * 100).toFixed(2)}% conv rate`)
+      if (inf.estimatedMonthlyOrders > 0) inferredParts.push(`~${inf.estimatedMonthlyOrders} orders/mo`)
+
+      setWindsorStatus(`Connected (${metrics.dataQuality}) — ${parts} data loaded${inferredParts.length ? '\nInferred: ' + inferredParts.join(' · ') : ''}`)
     } catch {
       setWindsorStatus('Failed to fetch Windsor data. Using benchmarks.')
     } finally {
       setWindsorLoading(false)
+    }
+  }
+
+  const handleAnalyzeSite = async () => {
+    if (!siteUrl) return
+    setSiteLoading(true)
+    setSiteStatus('Crawling website & analyzing with Claude...')
+
+    try {
+      const analysis = await analyzeSite(siteUrl)
+      setSiteAnalysis(analysis)
+
+      if (analysis.error) {
+        setSiteStatus(`Analysis incomplete: ${analysis.error}`)
+        return
+      }
+
+      // Auto-populate fields from site analysis
+      const next = { ...inputs }
+      if (analysis.brandName) next.brandName = analysis.brandName
+      if (analysis.industry) {
+        next.industry = analysis.industry
+        next.grossMargin = analysis.estimatedGrossMargin ?? DEFAULT_MARGIN[analysis.industry]
+        next.repeatPurchaseRate = DEFAULT_REPEAT_RATE[analysis.industry]
+      }
+      if (analysis.estimatedSkuCount) next.skuCount = analysis.estimatedSkuCount
+      if (analysis.estimatedAov && !autoFilled.aov) next.aov = analysis.estimatedAov // Windsor AOV takes priority
+      if (analysis.estimatedAvgDiscount != null) next.avgDiscount = analysis.estimatedAvgDiscount
+      if (analysis.estimatedGrossMargin != null) next.grossMargin = analysis.estimatedGrossMargin
+
+      setAutoFilled(prev => ({
+        ...prev,
+        brandName: !!analysis.brandName,
+        industry: !!analysis.industry,
+        skuCount: !!analysis.estimatedSkuCount,
+        aov: prev.aov || !!analysis.estimatedAov, // keep Windsor flag if set
+        avgDiscount: analysis.estimatedAvgDiscount != null,
+        grossMargin: analysis.estimatedGrossMargin != null,
+      }))
+
+      onChange(next)
+      setSiteStatus(`Analyzed — ${analysis.brandDescription || analysis.brandName}`)
+    } catch (err) {
+      setSiteStatus(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setSiteLoading(false)
     }
   }
 
@@ -129,7 +229,50 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Section 0: Windsor Data */}
+      {/* Section 0a: Website Intelligence */}
+      <Section title="Website" badge="AI" defaultOpen>
+        <p className="text-[10px] text-zinc-500 -mt-2 mb-3">
+          Paste the brand&apos;s website URL. Claude will extract brand name, industry, products, pricing, and margins.
+        </p>
+
+        <Field label="Website URL">
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={siteUrl}
+              onChange={e => setSiteUrl(e.target.value)}
+              placeholder="https://example.com"
+              className={inputClass + ' flex-1'}
+              onKeyDown={e => e.key === 'Enter' && handleAnalyzeSite()}
+            />
+          </div>
+        </Field>
+
+        <button
+          onClick={handleAnalyzeSite}
+          disabled={siteLoading || !siteUrl}
+          className="w-full py-2 bg-violet-800 hover:bg-violet-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-bold rounded-lg uppercase tracking-wider transition-colors"
+        >
+          {siteLoading ? 'Analyzing...' : 'Analyze Site'}
+        </button>
+
+        {siteStatus && (
+          <p className={`text-[10px] ${siteAnalysis && !siteAnalysis.error ? 'text-violet-400' : 'text-zinc-500'}`}>
+            {siteStatus}
+          </p>
+        )}
+
+        {siteAnalysis && !siteAnalysis.error && (
+          <div className="text-[10px] text-zinc-500 space-y-1 border-t border-zinc-800 pt-2 mt-2">
+            {siteAnalysis.industryReasoning && <p><span className="text-zinc-400">Industry:</span> {siteAnalysis.industryReasoning}</p>}
+            {siteAnalysis.marginReasoning && <p><span className="text-zinc-400">Margin:</span> {siteAnalysis.marginReasoning}</p>}
+            {siteAnalysis.targetAudience && <p><span className="text-zinc-400">Audience:</span> {siteAnalysis.targetAudience}</p>}
+            {siteAnalysis.priceRange && <p><span className="text-zinc-400">Price range:</span> ₹{siteAnalysis.priceRange.min.toLocaleString('en-IN')} – ₹{siteAnalysis.priceRange.max.toLocaleString('en-IN')}</p>}
+          </div>
+        )}
+      </Section>
+
+      {/* Section 0b: Windsor Data */}
       {hasWindsorAccounts && (
         <Section title="Live Ad Data" badge="Windsor" defaultOpen>
           <p className="text-[10px] text-zinc-500 -mt-2 mb-3">
@@ -158,13 +301,11 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
             </Field>
           )}
 
-          <button
-            onClick={handleFetchWindsor}
-            disabled={windsorLoading || (!selectedMetaAccount && !selectedGoogleAccount)}
-            className="w-full py-2 bg-emerald-800 hover:bg-emerald-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-bold rounded-lg uppercase tracking-wider transition-colors"
-          >
-            {windsorLoading ? 'Fetching...' : 'Pull Ad Data'}
-          </button>
+          {windsorLoading && (
+            <div className="w-full py-2 text-center text-xs text-emerald-400 animate-pulse font-medium">
+              Fetching last 90 days of ad data...
+            </div>
+          )}
 
           {windsorStatus && (
             <p className={`text-[10px] ${inputs.dataMode === 'windsor' ? 'text-emerald-400' : 'text-zinc-500'}`}>
@@ -173,7 +314,7 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
           )}
 
           {inputs.dataMode === 'windsor' && (
-            <button onClick={() => { set('dataMode', 'benchmark'); set('windsorOverrides', null); setWindsorStatus('') }}
+            <button onClick={() => { set('dataMode', 'benchmark'); set('windsorOverrides', null); setWindsorStatus(''); setAutoFilled({}) }}
               className="text-[10px] text-zinc-500 hover:text-zinc-300 underline">
               Switch back to benchmarks
             </button>
@@ -183,11 +324,11 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
 
       {/* Section 1: Brand Basics */}
       <Section title="Brand Basics" defaultOpen>
-        <Field label="Brand Name">
+        <Field label={<>Brand Name<AutoBadge field="brandName" autoFilled={autoFilled} /></>}>
           <input type="text" value={inputs.brandName} onChange={e => set('brandName', e.target.value)} placeholder="e.g. Venecci" className={inputClass} />
         </Field>
 
-        <Field label="Industry">
+        <Field label={<>Industry<AutoBadge field="industry" autoFilled={autoFilled} /></>}>
           <select value={inputs.industry} onChange={e => set('industry', e.target.value as Industry)} className={inputClass}>
             {Object.entries(INDUSTRY_LABELS).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
@@ -206,7 +347,7 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
           </div>
         </Field>
 
-        <Field label="Brand Type">
+        <Field label={<>Brand Type<AutoBadge field="brandType" autoFilled={autoFilled} /></>}>
           <div className="space-y-1.5">
             {([
               { value: 'existing', label: 'Existing Brand' },
@@ -224,25 +365,25 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
 
       {/* Section 2: Financials */}
       <Section title="Financials" defaultOpen>
-        <Field label="Monthly Revenue (₹)" hint={inputs.dataMode === 'windsor' ? 'Auto-filled from Windsor' : '0 for pre-launch brands'}>
+        <Field label={<>Monthly Revenue (₹)<AutoBadge field="monthlyRevenue" autoFilled={autoFilled} /></>} hint={autoFilled.monthlyRevenue ? 'Windsor: monthly avg from last 90 days' : '0 for pre-launch brands'}>
           <input type="number" value={inputs.monthlyRevenue || ''} onChange={e => set('monthlyRevenue', Number(e.target.value))} placeholder="0" className={inputClass} />
         </Field>
 
-        <Field label="Monthly Ad Spend (₹)" hint={inputs.dataMode === 'windsor' ? 'Auto-filled from Windsor (monthly avg)' : 'M1 baseline — never drops below this'}>
+        <Field label={<>Monthly Ad Spend (₹)<AutoBadge field="monthlyAdSpend" autoFilled={autoFilled} /></>} hint={autoFilled.monthlyAdSpend ? 'Windsor: monthly avg from last 90 days' : 'M1 baseline — never drops below this'}>
           <input type="number" value={inputs.monthlyAdSpend || ''} onChange={e => set('monthlyAdSpend', Number(e.target.value))} placeholder="e.g. 500000" className={inputClass} />
         </Field>
 
-        <Field label="AOV (₹)">
+        <Field label={<>AOV (₹)<AutoBadge field="aov" autoFilled={autoFilled} /></>} hint={autoFilled.aov ? 'Windsor: revenue ÷ purchases' : undefined}>
           <input type="number" value={inputs.aov || ''} onChange={e => set('aov', Number(e.target.value))} placeholder="e.g. 1800" className={inputClass} />
         </Field>
 
-        <Field label={`Gross Margin — ${Math.round(inputs.grossMargin * 100)}%`} hint="Used for CPA sustainability threshold">
+        <Field label={<>Gross Margin — {Math.round(inputs.grossMargin * 100)}%<AutoBadge field="grossMargin" autoFilled={autoFilled} /></>} hint={autoFilled.grossMargin ? 'Estimated by Claude from industry + pricing' : 'Used for CPA sustainability threshold'}>
           <input type="range" min="10" max="80" value={inputs.grossMargin * 100} onChange={e => set('grossMargin', Number(e.target.value) / 100)}
             className="w-full accent-red-700" />
         </Field>
 
         {inputs.brandType !== 'preLaunch' && (
-          <Field label="Current ROAS" hint={inputs.dataMode === 'windsor' ? 'Auto-filled from Windsor' : 'Leave empty to use industry average'}>
+          <Field label={<>Current ROAS<AutoBadge field="currentRoas" autoFilled={autoFilled} /></>} hint={autoFilled.currentRoas ? 'Windsor: blended ROAS across platforms' : 'Leave empty to use industry average'}>
             <input type="number" step="0.1" value={inputs.currentRoas ?? ''} onChange={e => set('currentRoas', e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 1.5" className={inputClass} />
           </Field>
         )}
@@ -264,7 +405,7 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
 
       {/* Section 4: Brand Intelligence */}
       <Section title="Brand Intelligence (Optional)">
-        <Field label="Monthly Website Traffic" hint="Determines retargeting pool size">
+        <Field label={<>Monthly Website Traffic<AutoBadge field="monthlyTraffic" autoFilled={autoFilled} /></>} hint={autoFilled.monthlyTraffic ? 'Windsor: estimated from ad clicks + organic multiplier' : 'Determines retargeting pool size'}>
           <input type="number" value={inputs.monthlyTraffic ?? ''} onChange={e => set('monthlyTraffic', e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 50000" className={inputClass} />
         </Field>
 
@@ -272,7 +413,7 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
           <input type="number" value={inputs.emailListSize || ''} onChange={e => set('emailListSize', Number(e.target.value))} placeholder="e.g. 25000" className={inputClass} />
         </Field>
 
-        <Field label="Number of SKUs" hint="<10 SKUs reduces DPA effectiveness">
+        <Field label={<>Number of SKUs<AutoBadge field="skuCount" autoFilled={autoFilled} /></>} hint={autoFilled.skuCount ? 'Estimated from website product count' : '<10 SKUs reduces DPA effectiveness'}>
           <input type="number" value={inputs.skuCount || ''} onChange={e => set('skuCount', Number(e.target.value))} placeholder="50" className={inputClass} />
         </Field>
 
@@ -281,12 +422,12 @@ export default function InputForm({ inputs, onChange, onGenerate }: Props) {
             className="w-full accent-red-700" />
         </Field>
 
-        <Field label={`Avg Discount — ${Math.round(inputs.avgDiscount * 100)}%`} hint="Reduces effective AOV">
+        <Field label={<>Avg Discount — {Math.round(inputs.avgDiscount * 100)}%<AutoBadge field="avgDiscount" autoFilled={autoFilled} /></>} hint={autoFilled.avgDiscount ? 'Estimated from MRP vs selling price on website' : 'Reduces effective AOV'}>
           <input type="range" min="0" max="50" value={inputs.avgDiscount * 100} onChange={e => set('avgDiscount', Number(e.target.value) / 100)}
             className="w-full accent-red-700" />
         </Field>
 
-        <Field label="Pixel Maturity">
+        <Field label={<>Pixel Maturity<AutoBadge field="pixelMaturity" autoFilled={autoFilled} /></>} hint={autoFilled.pixelMaturity ? `Windsor: ${inputs.pixelMaturity} (based on weekly conversion volume)` : undefined}>
           <div className="grid grid-cols-3 gap-1.5">
             {([
               { value: 'fresh', label: 'Fresh' },

@@ -68,7 +68,10 @@ export interface MediaPlanInputs {
   // Section 4: Growth Config
   spendGrowthRate: number      // default 1.2-1.4 based on brand type
 
-  // Section 5: Windsor Overrides (auto-populated when Windsor data available)
+  // Section 5: Platform Split Override
+  platformSplitOverride: { meta: number; google: number } | null  // null = auto from stage+industry
+
+  // Section 6: Windsor Overrides (auto-populated when Windsor data available)
   dataMode: DataMode
   windsorOverrides: WindsorOverrides | null
 }
