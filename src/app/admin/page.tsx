@@ -17,9 +17,12 @@ const ACTION_COLORS: Record<string, string> = {
   download_pdf: 'bg-blue-900/50 text-blue-400',
 }
 
+const ADMIN_EMAILS = ['dhruv.k@hovers.in', 'alan@hovers.in']
+
 export default async function AdminPage() {
   const session = await auth()
   if (!session?.user) redirect('/login')
+  if (!ADMIN_EMAILS.includes(session.user.email ?? '')) redirect('/')
 
   await ensureTable()
   const logs = await getActivityLog(200)
