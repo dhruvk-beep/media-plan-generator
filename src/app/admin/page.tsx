@@ -53,13 +53,15 @@ export default async function AdminPage() {
           <div className="space-y-1">
             {logs.map(log => {
               const meta = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata
-              // created_at is already IST from DB (UTC + 5:30)
-              const ist = new Date(log.created_at)
-              const day = ist.getDate()
+              // created_at is UTC from DB, convert to IST (+5:30)
+              const utc = new Date(log.created_at)
+              const istMs = utc.getTime() + (5.5 * 60 * 60 * 1000)
+              const ist = new Date(istMs)
+              const day = ist.getUTCDate()
               const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-              const mon = months[ist.getMonth()]
-              const h = ist.getHours()
-              const m = ist.getMinutes().toString().padStart(2, '0')
+              const mon = months[ist.getUTCMonth()]
+              const h = ist.getUTCHours()
+              const m = ist.getUTCMinutes().toString().padStart(2, '0')
               const ampm = h >= 12 ? 'PM' : 'AM'
               const h12 = h % 12 || 12
 
