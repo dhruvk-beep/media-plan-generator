@@ -53,18 +53,22 @@ export default async function AdminPage() {
           <div className="space-y-1">
             {logs.map(log => {
               const meta = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata
-              // created_at is already in IST from the DB query
-              const ts = log.created_at
-              const d = new Date(ts + '+05:30') // parse as IST
-              const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })
-              const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+              // created_at is already IST from DB (UTC + 5:30)
+              const ist = new Date(log.created_at)
+              const day = ist.getDate()
+              const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+              const mon = months[ist.getMonth()]
+              const h = ist.getHours()
+              const m = ist.getMinutes().toString().padStart(2, '0')
+              const ampm = h >= 12 ? 'PM' : 'AM'
+              const h12 = h % 12 || 12
 
               return (
                 <div key={log.id} className="px-4 py-3 rounded-lg hover:bg-zinc-900/50 transition-colors">
                   <div className="flex items-start gap-3">
                     {/* Time */}
                     <div className="text-[10px] text-zinc-700 w-24 shrink-0 pt-0.5">
-                      {dateStr} {timeStr}
+                      {day} {mon} {h12}:{m} {ampm}
                     </div>
 
                     {/* User */}
