@@ -52,17 +52,46 @@ export default function ChatPanel({ inputs, plan, onApplyChanges, versions, onRe
     setMessages([...newMessages, assistantMsg])
 
     try {
+      // Slim down plan to essential data only (avoid payload size issues)
+      const slimPlan = plan ? {
+        brand: plan.brand, industry: plan.industry, stage: plan.stage,
+        quarter: plan.quarter, brandType: plan.brandType, dataMode: plan.dataMode,
+        platformSplit: plan.platformSplit, effectiveAOV: plan.effectiveAOV,
+        sustainableCPA: plan.sustainableCPA, ltvMultiplier: plan.ltvMultiplier,
+        pixelStrategy: plan.pixelStrategy, warnings: plan.warnings,
+        assumptions: plan.assumptions, dynamicFunnel: plan.dynamicFunnel,
+        projection: plan.projection.map(p => ({
+          month: p.month, totalSpend: p.totalSpend, metaSpend: p.metaSpend,
+          googleSpend: p.googleSpend, roas: p.roas, totalRevenue: p.totalRevenue,
+          cpa: p.cpa, cpaStatus: p.cpaStatus, purchases: p.purchases,
+        })),
+        scenarios: plan.scenarios.map(s => ({
+          type: s.type, label: s.label,
+          projection: s.projection.map(p => ({
+            month: p.month, roas: p.roas, totalRevenue: p.totalRevenue, cpa: p.cpa,
+          })),
+        })),
+        metaCampaigns: plan.metaCampaigns.map(c => ({
+          campaign: c.campaign, funnel: c.funnel, budgetPct: c.budgetPct,
+          months: c.months.map(m => ({ budget: m.budget, roas: m.roas, orders: m.orders })),
+        })),
+        googleCampaigns: plan.googleCampaigns.map(c => ({
+          campaign: c.campaign,
+          months: c.months.map(m => ({ budget: m.budget, roas: m.roas, orders: m.orders })),
+        })),
+      } : null
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           currentInputs: inputs,
-          currentPlan: plan,
+          currentPlan: slimPlan,
         }),
       })
 
-      if (!res.ok) throw new Error('Chat request failed')
+      if (!res.ok) throw new Error(`Chat request failed (${res.status})`)
 
       const reader = res.body?.getReader()
       if (!reader) throw new Error('No reader')
