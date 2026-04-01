@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { auth } from '@/lib/auth'
+import { logActivity } from '@/lib/activity-log'
 
 export const maxDuration = 60
 
@@ -82,6 +84,16 @@ export async function POST(req: NextRequest) {
     if (apiMessages[lastIdx].role === 'user') {
       apiMessages[lastIdx].content = `[Updated plan state]\n${planContext}\n\n---\n\n${apiMessages[lastIdx].content}`
     }
+  }
+
+  // Log chat message
+  const session = await auth()
+  if (session?.user) {
+    const lastMsg = messages[messages.length - 1]
+    logActivity(session.user.email ?? '', session.user.name ?? '', 'chat_message', {
+      message: lastMsg?.content?.slice(0, 200),
+      brandName: currentInputs?.brandName,
+    })
   }
 
   try {

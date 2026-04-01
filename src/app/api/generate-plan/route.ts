@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { auth } from '@/lib/auth'
+import { logActivity } from '@/lib/activity-log'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 const WINDSOR_API_KEY = process.env.WINDSOR_API_KEY ?? ''
@@ -29,6 +31,16 @@ export async function POST(req: NextRequest) {
 
     // Claude synthesizes all data and recommends growth strategy
     const recommendation = await getClaudeRecommendation(siteData, windsorData)
+
+    // Log activity
+    const session = await auth()
+    if (session?.user) {
+      logActivity(session.user.email ?? '', session.user.name ?? '', 'generate_plan', {
+        siteUrl, metaAccountId, googleAccountId,
+        brandName: siteData?.brandName,
+        industry: siteData?.industry,
+      })
+    }
 
     return NextResponse.json({
       windsor: windsorData,

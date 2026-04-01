@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { auth } from '@/lib/auth'
+import { logActivity } from '@/lib/activity-log'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -8,6 +10,15 @@ export async function POST(req: NextRequest) {
 
   if (!feedback || !currentInputs) {
     return NextResponse.json({ error: 'Feedback and current inputs are required' }, { status: 400 })
+  }
+
+  // Log activity
+  const session = await auth()
+  if (session?.user) {
+    logActivity(session.user.email ?? '', session.user.name ?? '', 'refine_plan', {
+      feedback: feedback.slice(0, 200),
+      brandName: currentInputs?.brandName,
+    })
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {

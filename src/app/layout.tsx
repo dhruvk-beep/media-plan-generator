@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
+import { SessionProvider } from "next-auth/react";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -19,7 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${outfit.variable} h-full antialiased dark`}>
-      <body className="min-h-full flex flex-col font-[var(--font-outfit)] bg-[#0a0a0a]">{children}</body>
+      <body className="min-h-full flex flex-col font-[var(--font-outfit)] bg-[#0a0a0a]">
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

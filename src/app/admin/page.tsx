@@ -1,0 +1,96 @@
+import { auth } from '@/lib/auth'
+import { getActivityLog, ensureTable } from '@/lib/activity-log'
+import { redirect } from 'next/navigation'
+
+const ACTION_LABELS: Record<string, string> = {
+  generate_plan: 'Generated Plan',
+  chat_message: 'Chat Message',
+  refine_plan: 'Refined Plan',
+}
+
+const ACTION_COLORS: Record<string, string> = {
+  generate_plan: 'bg-red-900/50 text-red-400',
+  chat_message: 'bg-violet-900/50 text-violet-400',
+  refine_plan: 'bg-amber-900/50 text-amber-400',
+}
+
+export default async function AdminPage() {
+  const session = await auth()
+  if (!session?.user) redirect('/login')
+
+  // Ensure table exists on first visit
+  await ensureTable()
+
+  const logs = await getActivityLog(200)
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      <header className="border-b border-zinc-800 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/hovers-logo.svg" alt="Hovers" className="h-7" />
+          <div className="border-l border-zinc-800 pl-3 ml-1">
+            <h1 className="text-xs font-bold tracking-wider uppercase text-zinc-300">Activity Log</h1>
+            <p className="text-[9px] text-zinc-600">{logs.length} actions recorded</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-zinc-500">{session.user.name}</span>
+          <a href="/" className="text-xs text-zinc-500 hover:text-white transition-colors">Back to Tool</a>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-6 py-6">
+        {logs.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-zinc-600 text-sm">No activity yet. Generate a plan to see it here.</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {logs.map(log => {
+              const meta = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata
+              const time = new Date(log.created_at)
+
+              return (
+                <div key={log.id} className="flex items-start gap-3 px-4 py-3 rounded-lg hover:bg-zinc-900/50 transition-colors">
+                  {/* Time */}
+                  <div className="text-[10px] text-zinc-700 w-24 shrink-0 pt-0.5">
+                    {time.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}{' '}
+                    {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+
+                  {/* User */}
+                  <div className="w-32 shrink-0">
+                    <p className="text-xs text-zinc-300 truncate">{log.user_name}</p>
+                    <p className="text-[9px] text-zinc-700 truncate">{log.user_email}</p>
+                  </div>
+
+                  {/* Action badge */}
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${ACTION_COLORS[log.action] ?? 'bg-zinc-800 text-zinc-400'}`}>
+                    {ACTION_LABELS[log.action] ?? log.action}
+                  </span>
+
+                  {/* Metadata */}
+                  <div className="flex-1 min-w-0">
+                    {meta.brandName && (
+                      <span className="text-[10px] text-zinc-400">{meta.brandName}</span>
+                    )}
+                    {meta.siteUrl && (
+                      <span className="text-[10px] text-zinc-600 ml-2">{meta.siteUrl}</span>
+                    )}
+                    {meta.message && (
+                      <p className="text-[10px] text-zinc-500 truncate">&ldquo;{meta.message}&rdquo;</p>
+                    )}
+                    {meta.feedback && (
+                      <p className="text-[10px] text-zinc-500 truncate">&ldquo;{meta.feedback}&rdquo;</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}

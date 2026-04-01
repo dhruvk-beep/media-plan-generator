@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useSession, signOut } from 'next-auth/react'
 import type { MediaPlanInputs, MediaPlan, Industry, Quarter, BrandType, PixelMaturity, CreativeCapacity } from '@/lib/types'
 import { generateMediaPlan } from '@/lib/calculator'
 import { INDUSTRY_LABELS, DEFAULT_MARGIN, DEFAULT_REPEAT_RATE, DEFAULT_GROWTH_RATE } from '@/lib/constants'
@@ -569,6 +570,7 @@ export default function Home() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function Nav({ right }: { right?: React.ReactNode }) {
+  const { data: session } = useSession()
   return (
     <header className="border-b border-zinc-800/50 px-6 py-3 flex items-center justify-between no-print">
       <div className="flex items-center gap-3">
@@ -579,7 +581,16 @@ function Nav({ right }: { right?: React.ReactNode }) {
           <p className="text-[9px] text-zinc-600">v3 — AI-Powered</p>
         </div>
       </div>
-      {right}
+      <div className="flex items-center gap-3">
+        {right}
+        {session?.user && (
+          <div className="flex items-center gap-2 ml-2 pl-2 border-l border-zinc-800">
+            <span className="text-[10px] text-zinc-500 hidden lg:inline">{session.user.name}</span>
+            <a href="/admin" className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors hidden lg:inline">Log</a>
+            <button onClick={() => signOut()} className="text-[10px] text-zinc-700 hover:text-zinc-400 transition-colors">Sign out</button>
+          </div>
+        )}
+      </div>
     </header>
   )
 }
