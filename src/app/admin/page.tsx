@@ -60,8 +60,8 @@ export default async function AdminPage() {
                   <div className="flex items-start gap-3">
                     {/* Time */}
                     <div className="text-[10px] text-zinc-700 w-24 shrink-0 pt-0.5">
-                      {time.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}{' '}
-                      {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      {time.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}{' '}
+                      {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                     </div>
 
                     {/* User */}
