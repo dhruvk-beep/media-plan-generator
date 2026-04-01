@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
+export const maxDuration = 60
 
 const SYSTEM_PROMPT = `You are an expert performance marketing strategist for Indian D2C e-commerce brands, embedded inside a media plan generator tool.
 
@@ -52,20 +52,22 @@ RULES:
 export async function POST(req: NextRequest) {
   const { messages, currentInputs, currentPlan } = await req.json()
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: 'Anthropic API key not configured' }), { status: 500 })
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: 'Anthropic API key not configured' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
-  // Build plan context summary for Claude
+  const anthropic = new Anthropic({ apiKey })
+
   const planContext = buildPlanContext(currentInputs, currentPlan)
 
-  // Build conversation with plan context injected into first user message
   const apiMessages: { role: 'user' | 'assistant'; content: string }[] = []
-
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
     if (i === 0 && msg.role === 'user') {
-      // Inject plan context into first message
       apiMessages.push({
         role: 'user',
         content: `CURRENT PLAN STATE:\n${planContext}\n\n---\n\nUser: ${msg.content}`,
@@ -75,36 +77,35 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // If plan context changed since first message (plan was regenerated), inject updated context
   if (messages.length > 2) {
-    const lastUserIdx = apiMessages.length - 1
-    if (apiMessages[lastUserIdx].role === 'user') {
-      apiMessages[lastUserIdx].content = `[Updated plan state]\n${planContext}\n\n---\n\n${apiMessages[lastUserIdx].content}`
+    const lastIdx = apiMessages.length - 1
+    if (apiMessages[lastIdx].role === 'user') {
+      apiMessages[lastIdx].content = `[Updated plan state]\n${planContext}\n\n---\n\n${apiMessages[lastIdx].content}`
     }
   }
 
   try {
-    const stream = anthropic.messages.stream({
+    const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: apiMessages,
+      stream: true,
     })
 
-    // Stream the response as SSE
     const encoder = new TextEncoder()
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of stream) {
+          for await (const event of response) {
             if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`))
             }
           }
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-          controller.close()
         } catch (err) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`))
+        } finally {
           controller.close()
         }
       },
@@ -113,12 +114,15 @@ export async function POST(req: NextRequest) {
     return new Response(readable, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
       },
     })
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 }
 
@@ -165,7 +169,6 @@ function buildPlanContext(inputs: Record<string, unknown>, plan: Record<string, 
   }
 
   ctx += `\nPIXEL STRATEGY: ${p.pixelStrategy}\n`
-
   ctx += `\nINPUTS:\n${JSON.stringify(inputs, null, 2)}`
 
   return ctx

@@ -403,22 +403,22 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <Nav right={
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 lg:gap-3 flex-wrap">
           <button onClick={() => setChatOpen(!chatOpen)}
-            className={`text-xs transition-colors ${chatOpen ? 'text-violet-400 hover:text-violet-300' : 'text-zinc-500 hover:text-white'}`}>
+            className={`text-[10px] lg:text-xs transition-colors ${chatOpen ? 'text-violet-400 hover:text-violet-300' : 'text-zinc-500 hover:text-white'}`}>
             {chatOpen ? 'Hide Chat' : 'Chat'}
           </button>
           <button onClick={() => setShowSettings(!showSettings)}
-            className="text-xs text-zinc-500 hover:text-white transition-colors">
-            {showSettings ? 'Hide Settings' : 'Edit Inputs'}
+            className="text-[10px] lg:text-xs text-zinc-500 hover:text-white transition-colors hidden lg:block">
+            {showSettings ? 'Hide' : 'Edit'}
           </button>
-          <button onClick={handleStartOver} className="text-xs text-zinc-500 hover:text-white transition-colors">New Plan</button>
+          <button onClick={handleStartOver} className="text-[10px] lg:text-xs text-zinc-500 hover:text-white transition-colors">New</button>
           {plan && plan.dataMode === 'windsor' && (
-            <span className="text-[9px] font-bold px-2 py-1 rounded bg-emerald-900/50 text-emerald-400 uppercase">Live Data</span>
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-400 uppercase hidden lg:inline">Live</span>
           )}
           <button onClick={() => window.print()}
-            className="px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg uppercase tracking-wider transition-colors">
-            Export PDF
+            className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-[10px] lg:text-xs font-bold rounded-lg uppercase tracking-wider transition-colors">
+            PDF
           </button>
         </div>
       } />
@@ -501,9 +501,9 @@ export default function Home() {
       {/* Dashboard + Chat */}
       {plan && (
         <>
-          <div className="flex no-print" style={{ height: 'calc(100vh - 49px)' }}>
+          <div className="flex flex-col lg:flex-row no-print" style={{ height: 'calc(100vh - 49px)' }}>
             {/* Plan Content */}
-            <main className={`flex-1 overflow-y-auto p-6 transition-all ${chatOpen ? '' : ''}`} ref={dashboardRef}>
+            <main className="flex-1 overflow-y-auto p-4 lg:p-6" ref={dashboardRef}>
               <div className="max-w-5xl mx-auto space-y-6">
                 <div className="flex items-baseline justify-between">
                   <div>
@@ -535,7 +535,7 @@ export default function Home() {
 
             {/* Chat Panel */}
             {chatOpen && (
-              <aside className="w-96 min-w-96 border-l border-zinc-800 bg-[#0a0a0a]">
+              <aside className="w-full lg:w-96 lg:min-w-96 border-t lg:border-t-0 lg:border-l border-zinc-800 bg-[#0a0a0a] h-[50vh] lg:h-auto">
                 <ChatPanel
                   inputs={inputs}
                   plan={plan}
