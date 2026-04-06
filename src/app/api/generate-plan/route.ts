@@ -12,14 +12,15 @@ const WINDSOR_BASE = 'https://connectors.windsor.ai'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { siteUrl, metaAccountId, googleAccountId } = body as {
+  const { siteUrl, metaAccountId, googleAccountId, csvData } = body as {
     siteUrl?: string
     metaAccountId?: string
     googleAccountId?: string
+    csvData?: Record<string, unknown>[]
   }
 
-  if (!siteUrl && !metaAccountId && !googleAccountId) {
-    return NextResponse.json({ error: 'Provide at least a website URL or ad account' }, { status: 400 })
+  if (!siteUrl && !metaAccountId && !googleAccountId && (!csvData || csvData.length === 0)) {
+    return NextResponse.json({ error: 'Provide at least a website URL, ad account, or CSV data' }, { status: 400 })
   }
 
   try {
@@ -29,8 +30,14 @@ export async function POST(req: NextRequest) {
       siteUrl ? fetchSiteAnalysis(siteUrl) : null,
     ])
 
+    // If no Windsor data but CSV data available, build Windsor-like summary from CSV
+    let effectiveWindsor = windsorData
+    if (!effectiveWindsor && csvData && csvData.length > 0) {
+      effectiveWindsor = buildWindsorFromCsv(csvData)
+    }
+
     // Claude synthesizes all data and recommends growth strategy
-    const recommendation = await getClaudeRecommendation(siteData, windsorData)
+    const recommendation = await getClaudeRecommendation(siteData, effectiveWindsor)
 
     // Log activity (fire-and-forget)
     auth().then(session => {
@@ -44,7 +51,7 @@ export async function POST(req: NextRequest) {
     }).catch(() => {})
 
     return NextResponse.json({
-      windsor: windsorData,
+      windsor: effectiveWindsor,
       site: siteData,
       recommendation,
     })
@@ -364,4 +371,88 @@ function num(val: unknown): number {
   if (typeof val === 'number') return val
   if (typeof val === 'string') return parseFloat(val) || 0
   return 0
+}
+
+// ─── Build Windsor-like summary from parsed CSV data ───
+
+function buildWindsorFromCsv(csvData: Record<string, unknown>[]): WindsorSummary {
+  let metaResult: WindsorSummary['meta'] = null
+  let googleResult: WindsorSummary['google'] = null
+  let shopifyRevenue = 0
+  let shopifyAov = 0
+
+  for (const csv of csvData) {
+    const platform = csv.platform as string
+    const metrics = csv.metrics as Record<string, unknown> | undefined
+    const shopifyMetrics = csv.shopifyMetrics as Record<string, unknown> | undefined
+
+    if (platform === 'meta' && metrics) {
+      const totalSpend = num(metrics.totalSpend)
+      const totalRevenue = num(metrics.totalRevenue)
+      const totalPurchases = num(metrics.totalOrders)
+      const weeklyConv = totalPurchases / 13
+      metaResult = {
+        monthlySpend: Math.round(totalSpend / 3),
+        monthlyRevenue: Math.round(totalRevenue / 3),
+        roas: totalSpend > 0 ? totalRevenue / totalSpend : 0,
+        cpm: num(metrics.avgCpm),
+        cpc: num(metrics.avgCpc),
+        ctr: num(metrics.avgCtr),
+        convRate: num(metrics.avgConvRate),
+        cpa: num(metrics.avgCpa),
+        frequency: num(metrics.avgFrequency),
+        totalPurchases,
+        weeklyConversions: Math.round(weeklyConv),
+      }
+    }
+
+    if (platform === 'google_ads' && metrics) {
+      const totalSpend = num(metrics.totalSpend)
+      const totalRevenue = num(metrics.totalRevenue)
+      googleResult = {
+        monthlySpend: Math.round(totalSpend / 3),
+        monthlyRevenue: Math.round(totalRevenue / 3),
+        roas: totalSpend > 0 ? totalRevenue / totalSpend : 0,
+        cpc: num(metrics.avgCpc),
+        ctr: num(metrics.avgCtr),
+        convRate: num(metrics.avgConvRate),
+      }
+    }
+
+    if (platform === 'shopify' && shopifyMetrics) {
+      shopifyRevenue = num(shopifyMetrics.totalRevenue)
+      shopifyAov = num(shopifyMetrics.avgAov)
+    }
+  }
+
+  const metaSpend = metaResult?.monthlySpend ?? 0
+  const googleSpend = googleResult?.monthlySpend ?? 0
+  const totalSpend = metaSpend + googleSpend
+  const metaRevenue = metaResult?.monthlyRevenue ?? 0
+  const googleRevenue = googleResult?.monthlyRevenue ?? 0
+  // Use Shopify revenue if ad revenue is missing
+  const totalRevenue = (metaRevenue + googleRevenue) || Math.round(shopifyRevenue / 3)
+  const weeklyConv = metaResult?.weeklyConversions ?? 0
+
+  return {
+    meta: metaResult,
+    google: googleResult,
+    blended: {
+      monthlySpend: totalSpend,
+      monthlyRevenue: totalRevenue,
+      roas: totalSpend > 0 ? totalRevenue / totalSpend : 0,
+      aov: shopifyAov || (metaResult && metaResult.totalPurchases > 0
+        ? Math.round((metaRevenue * 3) / metaResult.totalPurchases)
+        : null),
+      platformSplit: totalSpend > 0
+        ? { meta: metaSpend / totalSpend, google: googleSpend / totalSpend }
+        : { meta: 0.5, google: 0.5 },
+    },
+    inferred: {
+      pixelMaturity: weeklyConv >= 50 ? 'mature' : weeklyConv >= 10 ? 'learning' : 'fresh',
+      brandType: totalSpend > 1000000 && (totalRevenue / totalSpend) < 1.5
+        ? 'vcBacked'
+        : 'existing',
+    },
+  }
 }

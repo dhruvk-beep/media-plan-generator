@@ -89,6 +89,10 @@ export default function Home() {
   // Chat & Versions
   const [chatOpen, setChatOpen] = useState(true)
   const [planVersions, setPlanVersions] = useState<{ inputs: MediaPlanInputs; plan: MediaPlan; label: string; timestamp: number }[]>([])
+
+  // CSV uploads
+  const [csvFiles, setCsvFiles] = useState<{ file: File; status: 'pending' | 'parsing' | 'done' | 'error'; result?: Record<string, unknown>; error?: string }[]>([])
+  const [csvParsing, setCsvParsing] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
@@ -100,9 +104,13 @@ export default function Home() {
 
   // ─── Generate ───
   const handleGenerate = async () => {
-    if (!siteUrl && !selectedMeta && !selectedGoogle) return
+    const hasCsvData = csvFiles.some(f => f.status === 'done' && f.result)
+    if (!siteUrl && !selectedMeta && !selectedGoogle && !hasCsvData) return
     setMode('generating')
     setGenStep(1)
+
+    // Collect parsed CSV data
+    const csvData = csvFiles.filter(f => f.status === 'done' && f.result).map(f => f.result)
 
     try {
       const res = await fetch('/api/generate-plan', {
@@ -112,6 +120,7 @@ export default function Home() {
           siteUrl: siteUrl || undefined,
           metaAccountId: selectedMeta || undefined,
           googleAccountId: selectedGoogle || undefined,
+          csvData: csvData.length > 0 ? csvData : undefined,
         }),
       })
       setGenStep(3)
@@ -212,6 +221,40 @@ export default function Home() {
     setPlan(v.plan)
   }
 
+  // ─── CSV Upload ───
+  const handleCsvUpload = async (files: FileList) => {
+    const newFiles = Array.from(files).map(f => ({ file: f, status: 'pending' as const }))
+    setCsvFiles(prev => [...prev, ...newFiles])
+    setCsvParsing(true)
+
+    const results: Record<string, unknown>[] = []
+    const updated = [...csvFiles, ...newFiles]
+
+    for (let i = csvFiles.length; i < updated.length; i++) {
+      updated[i] = { ...updated[i], status: 'parsing' }
+      setCsvFiles([...updated])
+
+      try {
+        const formData = new FormData()
+        formData.append('file', updated[i].file)
+        const res = await fetch('/api/parse-csv', { method: 'POST', body: formData })
+        const data = await res.json()
+
+        if (data.error) {
+          updated[i] = { ...updated[i], status: 'error', error: data.error }
+        } else {
+          updated[i] = { ...updated[i], status: 'done', result: data }
+          results.push(data)
+        }
+      } catch {
+        updated[i] = { ...updated[i], status: 'error', error: 'Upload failed' }
+      }
+      setCsvFiles([...updated])
+    }
+
+    setCsvParsing(false)
+  }
+
   const handleStartOver = () => {
     setMode('landing')
     setInputs(makeInputs())
@@ -224,6 +267,8 @@ export default function Home() {
     setSelectedGoogle('')
     setShowSettings(false)
     setPlanVersions([])
+    setCsvFiles([])
+    setCsvParsing(false)
   }
 
   const set = <K extends keyof MediaPlanInputs>(key: K, val: MediaPlanInputs[K]) => {
@@ -285,8 +330,57 @@ export default function Home() {
               </div>
             )}
 
+            {/* CSV Upload */}
+            <div>
+              <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wider">
+                Upload Data <span className="text-zinc-700 normal-case font-normal">Meta, Google Ads, or Shopify CSV</span>
+              </label>
+              <label className={`flex items-center justify-center w-full py-3 border border-dashed rounded-lg cursor-pointer transition-colors ${
+                csvFiles.length > 0 ? 'border-emerald-800 bg-emerald-900/10' : 'border-zinc-800 hover:border-zinc-600 bg-zinc-900/30'
+              }`}>
+                <input
+                  type="file"
+                  accept=".csv,.tsv,.xlsx"
+                  multiple
+                  className="hidden"
+                  onChange={e => e.target.files && handleCsvUpload(e.target.files)}
+                />
+                <div className="text-center">
+                  {csvParsing ? (
+                    <p className="text-xs text-amber-400 animate-pulse">Parsing with Claude...</p>
+                  ) : csvFiles.length === 0 ? (
+                    <p className="text-xs text-zinc-600">Drop CSV files here or click to upload</p>
+                  ) : (
+                    <p className="text-xs text-emerald-400">{csvFiles.filter(f => f.status === 'done').length} file(s) parsed</p>
+                  )}
+                </div>
+              </label>
+
+              {/* CSV file status chips */}
+              {csvFiles.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {csvFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[10px]">
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        f.status === 'done' ? 'bg-emerald-400' :
+                        f.status === 'parsing' ? 'bg-amber-400 animate-pulse' :
+                        f.status === 'error' ? 'bg-red-400' : 'bg-zinc-600'
+                      }`} />
+                      <span className="text-zinc-400 truncate flex-1">{f.file.name}</span>
+                      {f.result && (
+                        <span className="text-zinc-600">
+                          {(f.result as Record<string, unknown>).platform as string} · {(f.result as Record<string, unknown>).summary as string}
+                        </span>
+                      )}
+                      {f.error && <span className="text-red-400">{f.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button onClick={handleGenerate}
-              disabled={!siteUrl && !selectedMeta && !selectedGoogle}
+              disabled={csvParsing || (!siteUrl && !selectedMeta && !selectedGoogle && !csvFiles.some(f => f.status === 'done'))}
               className="w-full py-3 bg-red-700 hover:bg-red-600 disabled:bg-zinc-800/50 disabled:text-zinc-700 text-white font-bold rounded-lg text-xs uppercase tracking-widest transition-colors mt-2">
               Generate Plan
             </button>
